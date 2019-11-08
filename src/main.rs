@@ -22,10 +22,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             (about: "add a character to the roster")
             (@arg NAME: +required "Character name.")
             (@arg INIT: -i --init +takes_value "Set initiative formula.")
-            (@arg ADV: -a --adv "Rolls initiative with advantage."))
+            (@arg ADV: -a --adv "Rolls initiative with advantage.")
+            (@arg DIS: -d --dis "Rolls initiative with disadvantage.")
+            (@arg HP: -h --hp +takes_value "Max HP value or formula."))
         (@subcommand kill =>
             (about: "remove a character from the roster")
             (@arg NAME: +required "Character name."))
+        (@subcommand deal =>
+            (about: "Deal damage to a character.")
+            (@arg NAME: +required "Character name.")
+            (@arg DMG: +required "Amount of damage."))
+        (@subcommand heal =>
+            (about: "Heal damage to a character.")
+            (@arg NAME: +required "Character name.")
+            (@arg DMG: +required "Amount of healing."))
     ).get_matches();
 
     // Load the party data from file
@@ -38,10 +48,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("init", Some(m)) => { sc::init(m, &roster); }
         ("join", Some(m)) => { sc::join(m, &mut roster); }
         ("kill", Some(m)) => { sc::kill(m, &mut roster); }
+        ("deal", Some(m)) => { sc::deal(m, &mut roster); }
+        ("heal", Some(m)) => { sc::heal(m, &mut roster); }
         _                 => { println!("Unrecognized command."); }
     }
 
     // Save changes to the roster
+    // println!("Save roster: {:?}", roster);
     roster.save_to(roster_file);
 
     Ok(())
@@ -75,19 +88,48 @@ pub mod sc {
         inits.sort_by(|a, b| b.0.cmp(&a.0));
         println!("Initiative rolls:");
         for init in inits.iter() {
-            println!("{}: {}", init.0, init.1);
+            let head = format!("{}: {}", init.0, init.1);
+            let tail = roster.get(&init.1).status();
+            println!("{} {}", head, tail);
         }
     }
 
-    // Sub-command: add <character> -i <formula>
+    // Sub-command: add <name> -i <formula>
     pub fn join(matches: &ArgMatches, roster: &mut combat::Roster) {
-        let name = matches.value_of("NAME").unwrap();  // Required
+
+        // Name is always required
+        let name = matches.value_of("NAME").unwrap();
+
+        // Calculate initiative and initiative options
         let init = matches.value_of("INIT").unwrap_or("d20"); // Optional
-        roster.join_pc(name, init);
-        println!("{} has been added to the roster.", name);
+        let mut init = combat::Roll::from(init);
+        if matches.is_present("ADV") {
+            init.with(combat::RollKind::Advantage);
+        }
+        if matches.is_present("DIS") {
+            init.with(combat::RollKind::Disadvantage);
+        }
+
+        // Tell the user if we added or updated
+        if roster.exists(name) {
+            println!("Update {} in the roster:", name);
+        } else {
+            println!("Add {} to the roster.", name);
+        }
+
+        // Add character to the roster struct
+        roster.join(name, init);
+
+        // Asign a max HP if necessary
+        if matches.is_present("HP") {
+            let formula = matches.value_of("HP").unwrap();
+            let ch = roster.get_mut(name);
+            ch.hp.set_max(formula);
+            println!("Set max HP to {} ({}).", formula, ch.hp.max());
+        }
     }
 
-    // Sub-command: kill <character>
+    // Sub-command: kill <name>
     pub fn kill(matches: &ArgMatches, roster: &mut combat::Roster) {
         let name = matches.value_of("NAME").unwrap();  // Required
         if roster.exists(name) {
@@ -96,6 +138,24 @@ pub mod sc {
         } else {
             println!("{} is not in the roster.", name);
         }
+    }
+
+    // Sub-command: deal <name> <dmg>
+    pub fn deal(matches: &ArgMatches, roster: &mut combat::Roster) {
+        let name = matches.value_of("NAME").unwrap();
+        let dmg = combat::Roll::from(matches.value_of("DMG").unwrap()).roll();
+        let ch = roster.get_mut(name);
+        ch.hp.deal(dmg);
+        println!("{} took {} damage, now has {} HP.", name, dmg, ch.hp.current());
+    }
+
+    // Sub-command: heal <name> <dmg>
+    pub fn heal(matches: &ArgMatches, roster: &mut combat::Roster) {
+        let name = matches.value_of("NAME").unwrap();
+        let dmg = combat::Roll::from(matches.value_of("DMG").unwrap()).roll();
+        let ch = roster.get_mut(name);
+        ch.hp.heal(dmg);
+        println!("{} healed {} damage, now has {} HP.", name, dmg, ch.hp.current());
     }
 
 }

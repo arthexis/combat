@@ -9,11 +9,12 @@ use serde::{Deserialize, Serialize};
 ------------------------------------------------------------------------------------------- */
 
 // Determine the kind of roll
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
 pub enum RollKind {
     Normal,
     Advantage,
-    Disadvantage
+    Disadvantage,
+    Cancelled,
 }
 
 // Encapsulate a dice roll formula
@@ -36,19 +37,29 @@ impl Roll {
 
     // Set advantage or disadvantage
     pub fn with(&mut self, kind: RollKind) -> &mut Roll {
-        self.kind = kind;
+        if self.kind == RollKind::Normal {
+            self.kind = kind;
+        } else if self.kind != kind {
+            self.kind = RollKind::Cancelled;
+        }
         self
     }
 
     // Execute the dice roll
     pub fn roll(&self) -> i64 {
-        let dr = dice_roller::dice::Roller::parse(&self.formula);
-        match self.kind {
-            RollKind::Advantage => std::cmp::max(
-                dr.roll().total(),  dr.roll().total()),
-            RollKind::Disadvantage => std::cmp::min(
-                dr.roll().total(), dr.roll().total()),
-            RollKind::Normal => dr.roll().total()
+        if !self.formula.contains("d") {
+            self.formula.parse()
+                .expect("Invalid format for formula.")
+        } else {
+            let dr = dice_roller::dice::Roller::parse(&self.formula);
+            match self.kind {
+                RollKind::Advantage    =>
+                    std::cmp::max(dr.roll().total(),  dr.roll().total()),
+                RollKind::Disadvantage =>
+                    std::cmp::min(dr.roll().total(), dr.roll().total()),
+                _                      =>
+                    dr.roll().total()
+            }
         }
     }
 
@@ -67,18 +78,81 @@ pub enum CharacterKind {
     NPC
 }
 
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct HitPoints {
+    max: i64,
+    current: i64,
+    temp: i64,
+}
+
+impl HitPoints {
+
+    pub fn from(formula: &str) -> HitPoints {
+        let total = Roll::from(formula).roll();
+        HitPoints { max: total, current: total, temp: 0 }
+    }
+
+    // Change the max hitpoints
+    pub fn set_max(&mut self, formula: &str) {
+        let total = Roll::from(formula).roll();
+        self.current = self.current + (total - self.max);
+        self.max = total;
+    }
+
+    // Return true if max hit points are set
+    pub fn is_set(&self) -> bool {
+        self.max > 0
+    }
+
+    // Set temporary hitpoints
+    pub fn temp(&mut self, hp: i64) {
+        if hp > self.temp { self.temp = hp; }
+    }
+
+    // Deal damage
+    pub fn deal(&mut self, dmg: i64) {
+        let mut _dmg = dmg;
+        if self.temp > 0 {
+            self.temp = std::cmp::max(self.temp - _dmg, 0);
+            _dmg = _dmg - self.temp;
+        }
+        if _dmg > 0 {
+            self.current = std::cmp::max(self.current - _dmg, 0)
+        }
+    }
+
+    // Heal damage
+    pub fn heal(&mut self, dmg: i64) {
+        self.current = std::cmp::min(self.current + dmg, self.max)
+    }
+
+    // Get current hit-points
+    pub fn current(&self) -> i64 { self.current }
+
+    // Get max hit-points
+    pub fn max(&self) -> i64 { self.max }
+
+    // Return true if dead
+    pub fn dead(&self) -> bool { self.max > 0 && self.current < 1 }
+}
+
+
 // Represent a single PC or NPC
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Character {
     name: String,
-    kind: CharacterKind,
-    init: Roll,
+    pub init: Roll,
+    pub hp: HitPoints,
 }
 
 impl Character {
-
-    // Roll initiative for this character
-    pub fn roll_init(&self) -> i64 { self.init.roll() }
+    pub fn status(&self) -> String {
+        if self.hp.is_set() {
+            format!("{} HP", self.hp.current())
+        } else {
+            "".to_string()
+        }
+    }
 }
 
 
@@ -105,34 +179,48 @@ impl Roster {
         }
     }
 
-    pub fn join_pc(&mut self, name: &str, init: &str) {
+    // Save the roster to a file
+    pub fn save_to(&self, file: &str) {
+        std::fs::write(file, serde_json::to_string(self)
+            .expect("Unable to write roster to file.")).unwrap();
+    }
+
+    // Add a new character to the roster
+    pub fn join(&mut self, name: &str, init: Roll) {
         self.chars.insert(name.to_string(), Character {
             name: name.to_string(),
-            init: Roll::from(init),
-            kind: CharacterKind::PC
+            hp: HitPoints::default(),
+            init,
         });
     }
 
+    // Check if a character exists
     pub fn exists(&self, name: &str) -> bool {
         self.chars.contains_key(name)
     }
 
+    // Remove a character from the roster
     pub fn kill(&mut self, name: &str) {
         self.chars.remove(name);
+    }
+
+    // Retrieve a specific caracter
+    pub fn get(&self, name: &str) -> &Character {
+        self.chars.get(name).expect("No character found with that name.")
+    }
+
+    // Retrieve a specific caracter mutably
+    pub fn get_mut(&mut self, name: &str) -> &mut Character {
+        self.chars.get_mut(name).expect("No character found with that name.")
     }
 
     // Roll initiative for every character in the roster
     pub fn roll_inits(&self) -> Vec<(i64, String)> {
         let mut inits = Vec::new();
         for (name, character) in self.chars.iter() {
-            inits.push((character.roll_init(), name.clone()));
+            inits.push((character.init.roll(), name.clone()));
         }
         inits
     }
 
-    // Save the roster to a file
-    pub fn save_to(&self, file: &str) {
-        std::fs::write(file, serde_json::to_string(self)
-            .expect("Unable to write roster to file.")).unwrap();
-    }
 }
