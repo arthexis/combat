@@ -132,8 +132,6 @@ impl HitPoints {
     // Get max hit-points
     pub fn max(&self) -> i64 { self.max }
 
-    // Return true if dead
-    pub fn dead(&self) -> bool { self.max > 0 && self.current < 1 }
 }
 
 
@@ -146,8 +144,17 @@ pub struct Character {
 }
 
 impl Character {
+
+    // Return true if the character is dead
+    pub fn dead(&self) -> bool {
+        self.hp.max > 0 && self.hp.current < 1
+    }
+
+    // Return an user friendly status message
     pub fn status(&self) -> String {
-        if self.hp.is_set() {
+        if self.dead() {
+            "DEAD".to_string()
+        } else if self.hp.is_set() {
             format!("{} HP", self.hp.current())
         } else {
             "".to_string()
@@ -221,6 +228,20 @@ impl Roster {
             inits.push((character.init.roll(), name.clone()));
         }
         inits
+    }
+
+    // Remove dead characters
+    pub fn wipe(&mut self) {
+        // Get the names of all dead characters
+        let dead: Vec<_> = self.chars.iter()
+            .filter(|(_, ch)| ch.dead())
+            .map(|(name, _)| name.clone())
+            .collect();
+        // Remove the characters by name
+        for name in dead {
+            println!("{} is dead, removing.", name);
+            self.chars.remove(&name);
+        }
     }
 
 }

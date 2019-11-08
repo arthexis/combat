@@ -36,6 +36,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             (about: "Heal damage to a character.")
             (@arg NAME: +required "Character name.")
             (@arg DMG: +required "Amount of healing."))
+        (@subcommand wipe =>
+            (about: "Remove dead characters."))
     ).get_matches();
 
     // Load the party data from file
@@ -50,6 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("kill", Some(m)) => { sc::kill(m, &mut roster); }
         ("deal", Some(m)) => { sc::deal(m, &mut roster); }
         ("heal", Some(m)) => { sc::heal(m, &mut roster); }
+        ("wipe", Some(_)) => { sc::wipe(&mut roster); }
         _                 => { println!("Unrecognized command."); }
     }
 
@@ -80,17 +83,17 @@ pub mod sc {
         let mut inits = roster.roll_inits();
         if inits.len() == 0 {
             println!("Roster is empty.");
-            return
-        }
-        if matches.is_present("LAIR") {
-            inits.push((20, String::from("LAIR ACTIONS")));
-        }
-        inits.sort_by(|a, b| b.0.cmp(&a.0));
-        println!("Initiative rolls:");
-        for init in inits.iter() {
-            let head = format!("{}: {}", init.0, init.1);
-            let tail = roster.get(&init.1).status();
-            println!("{} {}", head, tail);
+        } else {
+            if matches.is_present("LAIR") {
+                inits.push((20, String::from("LAIR ACTIONS")));
+            }
+            inits.sort_by(|a, b| b.0.cmp(&a.0));
+            println!("Initiative rolls:");
+            for init in inits.iter() {
+                let head = format!("{}: {}", init.0, init.1);
+                let tail = roster.get(&init.1).status();
+                println!("{} {}", head, tail);
+            }
         }
     }
 
@@ -156,6 +159,11 @@ pub mod sc {
         let ch = roster.get_mut(name);
         ch.hp.heal(dmg);
         println!("{} healed {} damage, now has {} HP.", name, dmg, ch.hp.current());
+    }
+
+    // Sub-command: wipe
+    pub fn wipe(roster: &mut combat::Roster) {
+        roster.wipe();
     }
 
 }

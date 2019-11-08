@@ -1,1 +1,1 @@
-{"chars":{"Marcel":{"name":"Marcel","kind":"PC","init":{"formula":"d20","kind":"Advantage"},"hp":{"max":30,"current":30,"temp":0}},"Goblin":{"name":"Goblin","kind":"PC","init":{"formula":"d20","kind":"Advantage"},"hp":{"max":21,"current":21,"temp":0}}}}
+{"chars":{"Marcel":{"name":"Marcel","init":{"formula":"d20","kind":"Advantage"},"hp":{"max":30,"current":30,"temp":0}}}}
